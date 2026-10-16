@@ -144,7 +144,8 @@ def build_roster_block(roster: dict, self_wxid: str = "",
 
 def build_system(card: dict, roster: dict = None, self_wxid: str = "",
                  max_age_minutes: int = 10, is_group: bool = True,
-                 extra_facts: list = None) -> str:
+                 extra_facts: list = None,
+                 behavior_overrides: dict = None) -> str:
     """由风格卡片 + 群成员表 + 手写行为约束拼出 SYSTEM 提示词。
 
     四段结构：
@@ -189,7 +190,8 @@ def build_system(card: dict, roster: dict = None, self_wxid: str = "",
         taboos=fmt(p.get("taboos")),
         roster=build_roster_block(roster or {}, self_wxid) if is_group else "")
     return base + behavior.as_prompt_block(max_age_minutes, is_group=is_group,
-                                           extra_facts=extra_facts)
+                                           extra_facts=extra_facts,
+                                           overrides=behavior_overrides)
 
 
 # ---------------------------------------------------------------- 该不该回
@@ -408,6 +410,7 @@ def generate(card: dict, context: list, self_name: str, is_group: bool,
              burst_start: int = -1, recent_mine: list = None,
              few_shot: list = None, retry_on_dup: int = 2,
              max_burst: int = 5, extra_facts: list = None,
+             behavior_overrides: dict = None,
              verbose: bool = True) -> dict:
     """生成一次轮次回复（可能 1 条，也可能多条连发）。
 
@@ -418,7 +421,8 @@ def generate(card: dict, context: list, self_name: str, is_group: bool,
     """
     sys_prompt = build_system(card, roster=roster, self_wxid=self_wxid,
                               max_age_minutes=max_age_minutes,
-                              is_group=is_group, extra_facts=extra_facts)
+                              is_group=is_group, extra_facts=extra_facts,
+                              behavior_overrides=behavior_overrides)
     r = behavior.rules(max_age_minutes)
     ban = {str(x).strip() for x in (recent_mine or []) if str(x).strip()}
     attempts, last = 0, None

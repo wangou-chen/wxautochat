@@ -29,6 +29,15 @@
     discard_pending_on  本人发哪些类型算"我已经回过了"，从而丢弃待回队列。
                         默认 ["文本"]；可写 ["文本","引用"]，或 ["*"] 表示任何发言都丢弃。
     notes            用户给定事实（权威输入），会注入每次回复的 SYSTEM
+    behavior         按会话的行为覆盖（覆盖 behavior.py 的硬约束）。键名同 behavior.py
+                     的规则段：content / emotion / private / correctness /
+                     output_constraints / anti_repeat / skip_conditions / extra_facts /
+                     max_burst / frequency_penalty / presence_penalty。
+                     语义：`xxx` 整体替换该段；`xxx_extra` 追加到该段之后；
+                     `extra_facts` 永远追加。**未列出的段沿用全局默认**，
+                     所以只写要改的那几段即可，安全底线不会被误伤。
+                     例：互骂互损的会话只要写 emotion_extra + content_extra 把
+                     「说话要软」反过来，不必重写全部约束。
     comment          自由备注，代码不读
 """
 import glob
@@ -53,7 +62,7 @@ BOOL_FLAGS = {
     "fast": "--fast", "think": "--think", "once": "--once",
 }
 KNOWN = set(VALUE_FLAGS) | set(BOOL_FLAGS) | {
-    "chat", "aliases", "discard_pending_on", "notes", "comment",
+    "chat", "aliases", "discard_pending_on", "notes", "comment", "behavior",
 }
 
 

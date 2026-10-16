@@ -159,43 +159,68 @@ def load_overrides() -> dict:
         return {}
 
 
-def rules(text_age_minutes: int = 10) -> dict:
-    """取当前生效的约束（内置 + 本地覆盖）。"""
-    ov = load_overrides()
-    out = {
-        "output_constraints": ov.get("output_constraints") or list(OUTPUT_CONSTRAINTS),
-        "correctness": ov.get("correctness") or list(CORRECTNESS),
-        "content": ov.get("content") or list(CONTENT_REQUIREMENTS),
-        "emotion": ov.get("emotion") or list(EMOTION),
-        "private": ov.get("private") or list(PRIVATE_CHAT),
-        "anti_repeat": ov.get("anti_repeat") or list(ANTI_REPEAT),
-        "skip_conditions": ov.get("skip_conditions") or list(SKIP_CONDITIONS),
-        "extra_facts": [str(x) for x in (ov.get("extra_facts") or []) if str(x).strip()],
+def rules(text_age_minutes: int = 10, overrides: dict = None) -> dict:
+    """取当前生效的约束。三层合并，后者覆盖前者：
+
+      1. 内置默认（本文件里的常量）
+      2. `behavior.local.json`（全局人工覆盖）
+      3. `overrides`（**按会话**覆盖，来自 conversations/<会话>.json 的 behavior 段）
+
+    覆盖语义：键名整体替换；`xxx_extra` 追加到 `xxx` 后面（便于"在全局要求之上
+    再加几条"而不必抄一遍）；`extra_facts` 永远追加。
+
+    为什么要按会话分层：同一个人在不同会话里的分寸完全不同 —— 跟一个人是互骂
+    互损、跟另一个人要软要哄，"说话要软"这条硬约束在互骂的会话里是反作用。
+    把它写死成全局规则，就只能靠改代码解决；分层后改一个 json 即可。
+    """
+    base = {
+        "output_constraints": list(OUTPUT_CONSTRAINTS),
+        "correctness": list(CORRECTNESS),
+        "content": list(CONTENT_REQUIREMENTS),
+        "emotion": list(EMOTION),
+        "private": list(PRIVATE_CHAT),
+        "anti_repeat": list(ANTI_REPEAT),
+        "skip_conditions": list(SKIP_CONDITIONS),
+        "extra_facts": [],
     }
-    age = ov.get("max_age_minutes", text_age_minutes)
-    out["skip_conditions"] = [s % {"age": age} for s in out["skip_conditions"]]
-    out["max_burst"] = int(ov.get("max_burst", 5))
-    out["max_age_minutes"] = int(age)
+    for layer in (load_overrides() or {}, overrides or {}):
+        if not layer:
+            continue
+        for k, v in layer.items():
+            if k == "extra_facts":
+                base["extra_facts"] += [str(x) for x in (v or [])
+                                        if str(x).strip()]
+            elif k.endswith("_extra") and k[:-6] in base:
+                base[k[:-6]] = list(base[k[:-6]]) + [str(x) for x in (v or [])]
+            elif k in base and isinstance(v, (list, tuple)):
+                base[k] = list(v)
+            elif k in ("max_burst", "max_age_minutes", "frequency_penalty",
+                       "presence_penalty"):
+                base[k] = v
+    age = base.get("max_age_minutes", text_age_minutes)
+    base["skip_conditions"] = [s % {"age": age} for s in base["skip_conditions"]]
+    base["max_burst"] = int(base.get("max_burst", 5))
+    base["max_age_minutes"] = int(age)
     # 反重复的生成参数（DeepSeek 非思考模式下有效；思考模式下会被忽略）
-    out["frequency_penalty"] = float(ov.get("frequency_penalty", 0.8))
-    out["presence_penalty"] = float(ov.get("presence_penalty", 0.6))
-    return out
+    base["frequency_penalty"] = float(base.get("frequency_penalty", 0.8))
+    base["presence_penalty"] = float(base.get("presence_penalty", 0.6))
+    return base
 
 
 def as_prompt_block(text_age_minutes: int = 10, is_group: bool = True,
-                    extra_facts: list = None) -> str:
+                    extra_facts: list = None, overrides: dict = None) -> str:
     """渲染成 SYSTEM 提示词里的一段。
 
     is_group=False（私聊）时额外插入私聊专用要求 —— 群聊与私聊的规矩不同，
     不能让私聊去遵守「不要 @ 无关的人」「别插话」这类群规则。
-    extra_facts：**按会话**的用户给定事实（来自 conversations/<会话>.json），
-    与 behavior.local.json 里的全局 extra_facts 合并。
+    extra_facts：按会话的用户给定事实（与 behavior.local.json 的合并）。
+    overrides：按会话的行为覆盖（conversations/<会话>.json 的 behavior 段）。
     """
 
     def fmt(xs):
         return "\n".join("- %s" % x for x in xs)
 
-    r = rules(text_age_minutes)
+    r = rules(text_age_minutes, overrides=overrides)
     oc = r["output_constraints"]
     ar = r["anti_repeat"]
     if not is_group:

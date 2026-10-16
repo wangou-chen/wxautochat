@@ -356,6 +356,9 @@ def cmd_reply(args):
              "、".join(ccfg.get("discard_pending_on") or ["文本"])))
     if ccfg.get("notes"):
         print("用户给定事实 %d 条（来自会话配置）" % len(ccfg["notes"]))
+    if ccfg.get("behavior"):
+        print("按会话行为覆盖 %d 段：%s"
+              % (len(ccfg["behavior"]), "、".join(sorted(ccfg["behavior"]))))
     print("等待新消息…（Ctrl+C 停止）")
 
     while True:
@@ -484,6 +487,7 @@ def cmd_reply(args):
                                  recent_mine=recent_mine, few_shot=few,
                                  max_burst=args.max_burst or 5,
                                  extra_facts=ccfg.get("notes"),
+                                 behavior_overrides=ccfg.get("behavior"),
                                  verbose=args.verbose or not args.quiet)
             except Exception as e:                                     # noqa: BLE001
                 print("[错误] %s: %s" % (type(e).__name__, e), file=sys.stderr)

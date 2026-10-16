@@ -219,6 +219,43 @@ def _signals(ev: str) -> list:
     return out
 
 
+JSON_PARSE_TRIES = 3        # JSON 语法失败时的最大尝试次数（每次约 ¥0.02）
+
+
+def parse_llm_json(content: str):
+    """尽力把模型输出解析成 dict。返回 (错误信息, dict 或 None)。
+
+    为什么要容错：实测模型会给出**语义合法、语法非法**的 JSON —— 字符串里带
+    未转义的引号或裸换行，报 `Expecting ',' delimiter`。一次就 raise 会让这
+    张卡片白花钱（实测 2026-10-17 生成 𓁅 卡片时就这么失败过一次）。
+    依次尝试：严格解析 → `strict=False`（允许裸控制字符，最常见）→
+    截出最外层 `{...}` → 再去掉对象/数组尾部的多余逗号。
+    """
+    def brace(s):
+        i, j = s.find("{"), s.rfind("}")
+        return s[i:j + 1] if 0 <= i < j else s
+
+    def no_trailing_comma(s):
+        return re.sub(r",(\s*[}\]])", r"\1", s)
+
+    cands, seen = [], set()
+    for base in (content, brace(content)):
+        for s in (base, no_trailing_comma(base)):
+            if s and s not in seen:
+                seen.add(s)
+                cands.append(s)
+    last = ""
+    for s in cands:
+        for kw in ({}, {"strict": False}):
+            try:
+                got = json.loads(s, **kw)
+                if isinstance(got, dict):
+                    return "", got
+            except json.JSONDecodeError as e:
+                last = str(e)
+    return last or "无法解析", None
+
+
 def verify(profile: dict, facts: dict, samples_text: str = "",
            threshold: float = 0.5) -> dict:
     """交叉核对模型声称的"(依据: X)"。
@@ -337,44 +374,49 @@ def run(snaps: dict, query: str, md5map: dict, contacts: dict,
         if verbose:
             print("       调用 API：%s（thinking=%s, effort=%s）…"
                   % (cfg["model"], thinking, effort), flush=True)
-        content, usage, _raw = api.chat(
-            msgs, cfg=cfg, json_mode=True, thinking=thinking,
-            reasoning_effort=effort if thinking else None,
-            max_tokens=max_tokens, verbose=verbose)
-        card["usage"] = usage
-        card["cost_cny"] = round(api.cost(usage, cfg["model"]), 4)
+        # JSON 解析失败就重试：实测模型会吐出**合法语义、非法语法**的内容
+        # （字符串里有未转义的引号或裸换行 → `Expecting ',' delimiter`），
+        # 一次就 raise 会让整张卡片白花钱。先做宽松修复，不行再要一次。
+        prof, content, usage = None, "", {}
+        for attempt in range(1, JSON_PARSE_TRIES + 1):
+            content, usage, _raw = api.chat(
+                msgs, cfg=cfg, json_mode=True, thinking=thinking,
+                reasoning_effort=effort if thinking else None,
+                max_tokens=max_tokens, verbose=verbose)
+            card["usage"] = usage
+            card["cost_cny"] = round(
+                (card.get("cost_cny") or 0) + api.cost(usage, cfg["model"]), 4)
 
-        # 截断必须显式报错，否则用户只会看到"JSON 解析失败"而无从下手。
-        if usage.get("finish_reason") == "length":
-            raise ValueError(
-                "输出被截断（finish_reason=length）：%s 思考 token 与 JSON 正文"
-                "共用 max_tokens=%s，预算不够。\n"
-                "  处理：加大 --max-tokens（当前模型最大输出 384K），"
-                "或降低 --effort（low/high/max），或用 --no-think 关闭思考。\n"
-                "  已消耗：输入 %s / 输出 %s token%s，约 ¥%s"
-                % (cfg["model"], max_tokens,
-                   usage.get("prompt_tokens"), usage.get("completion_tokens"),
-                   ("／思考 %s" % usage["reasoning_tokens"])
-                   if usage.get("reasoning_tokens") else "",
-                   card["cost_cny"]))
-
-        try:
-            prof = json.loads(content)
-        except json.JSONDecodeError as e:
-            m = re.search(r"\{.*\}", content, re.S)
-            if m:
-                try:
-                    prof = json.loads(m.group(0))
-                except json.JSONDecodeError:
-                    prof = None
-            else:
-                prof = None
-            if prof is None:
+            # 截断必须显式报错，否则用户只会看到"JSON 解析失败"而无从下手。
+            if usage.get("finish_reason") == "length":
                 raise ValueError(
-                    "模型未返回可解析的 JSON（%s）。\n"
-                    "  内容长度 %d 字符，前 200 字：%s\n"
-                    "  该内容已存到卡片的 raw_content 字段便于排查。"
-                    % (e, len(content), content[:200].replace("\n", " "))) from e
+                    "输出被截断（finish_reason=length）：%s 思考 token 与 JSON 正文"
+                    "共用 max_tokens=%s，预算不够。\n"
+                    "  处理：加大 --max-tokens（当前模型最大输出 384K），"
+                    "或降低 --effort（low/high/max），或用 --no-think 关闭思考。\n"
+                    "  已消耗：输入 %s / 输出 %s token%s，约 ¥%s"
+                    % (cfg["model"], max_tokens,
+                       usage.get("prompt_tokens"), usage.get("completion_tokens"),
+                       ("／思考 %s" % usage["reasoning_tokens"])
+                       if usage.get("reasoning_tokens") else "",
+                       card["cost_cny"]))
+
+            err, prof = parse_llm_json(content)
+            if prof is not None:
+                break
+            if verbose:
+                print("       [JSON] 第 %d 次返回不可解析（%s），重试…"
+                      % (attempt, err), flush=True)
+        if prof is None:
+            # 把最后一次原文留在卡片里，便于离线排查
+            card["raw_content"] = content
+            card["raw_content_len"] = len(content)
+            raise ValueError(
+                "模型连续 %d 次未返回可解析的 JSON（%s）。\n"
+                "  最后一次内容长度 %d 字符，前 200 字：%s\n"
+                "  原文已存到卡片的 raw_content 字段。"
+                % (JSON_PARSE_TRIES, err, len(content),
+                   content[:200].replace("\n", " ")))
         card["raw_content_len"] = len(content)
         card["llm_profile"] = prof
         card["verification"] = verify(

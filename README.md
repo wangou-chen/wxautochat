@@ -329,7 +329,45 @@ python -m wxautochat probe            # 首次会全量解密，约 4 秒 / 592 
 > 用户手发一条分享/引用就把对方一条正经问题整条丢掉的 case。代价是**你用引用回他时，
 > 机器人可能再回一遍**；不想重复就加 `"引用"`。
 
-### 5.2 三层配置示例
+### 5.2 按会话的行为覆盖（`behavior` 段）
+
+**为什么要这一层**：同一个人在不同会话里的分寸完全不同 —— 跟一个人是互骂互损，
+跟另一个人要软要哄。全局硬约束里那条「说话要软」在互骂的会话里是**反作用**。
+把它写死成全局规则，就只能靠改代码解决；分层后改一个 json 即可。
+
+```json
+{
+  "chat": "某个会话",
+  "behavior": {
+    "emotion": ["……整体替换掉全局的「说话要软」……"],
+    "content_extra": ["……在全局内容要求之后追加……"],
+    "extra_facts": ["对方是能一起互骂的朋友；脏话 = 亲近，不是冒犯"]
+  }
+}
+```
+
+**语义**（`behavior.rules()` 三层合并，后者覆盖前者）：
+
+| 写法 | 含义 |
+|---|---|
+| `"emotion": [...]` | **整体替换**该段 |
+| `"emotion_extra": [...]` | **追加**到该段之后（不必抄一遍全局） |
+| `"extra_facts": [...]` | 永远**追加**（全局 → behavior.local.json → 会话） |
+| `"max_burst"` / `"frequency_penalty"` / `"presence_penalty"` / `"max_age_minutes"` | 覆盖数值 |
+
+可覆盖的段：`content` / `emotion` / `private` / `correctness` / `output_constraints` /
+`anti_repeat` / `skip_conditions` / `extra_facts`。
+
+> **未列出的段沿用全局默认**，所以只写要改的那几段即可，安全底线（禁 URL、
+> 禁占位符、不编造、不做承诺）不会被误伤 —— 这一点有回归用例守着。
+
+**实例（互骂互损的会话）**：只写 `emotion`（替换）+ `content_extra` + `private_extra`
++ `extra_facts`，把「说话要软」换成「被骂必须骂回去 / 不适用软化」，
+同时在 `content_extra` 里要求「接梗与反击、禁止答非所问、短狠带语气」。
+自检 18/18 通过，其中一条专门断言**全局的软化要求已从提示词里消失**、
+而**输出形式与正确性两段一条不少**。
+
+### 5.3 三层配置示例
 
 ```powershell
 python -m wxautochat convo --list                    # 列出全部会话配置
