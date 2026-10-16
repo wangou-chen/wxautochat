@@ -371,6 +371,15 @@ def cmd_reply(args):
     print("等待新消息…（Ctrl+C 停止）")
 
     while True:
+        # STOP 是**总开关**，不只是"别发送"：早期只在 sender 里拦截，
+        # 结果是循环照常轮询、照常调 API 生成草稿，钱一直花、一条也发不出去
+        # （实测用户建了 STOP 后又被扣了两轮生成费 ¥0.0036，还以为是"坏了"）。
+        # 现在在循环顶部就退出，并把锁释放掉，让下一次启动能起来。
+        if sender.stopped():
+            print("[停止] 检测到 STOP 文件，进程退出（删掉 %s 即可继续）"
+                  % sender.STOP_FILE)
+            lock.release(info["work"])
+            return 0
         try:
             try:
                 msgs = w.poll()
