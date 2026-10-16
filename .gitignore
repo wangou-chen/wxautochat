@@ -1,0 +1,30 @@
+# 本地增量工作目录（解密副本 + 游标 + 发送留档截图），不入库
+work/
+# 风格卡片产物，不入库
+profiles/
+# 按会话的回复策略（含会话名/wxid/备注），不入库
+conversations/
+# 回复草稿与已发日志（含完整聊天内容），不入库
+replies/
+# 导出与统计报告，不入库
+exports/
+# 紧急停止标记
+STOP
+# API 密钥（P2/P3 共用），绝不入库
+api.txt
+# DeepSeek 等本地配置，绝不入库
+config.local.json
+# 行为约束本地覆盖，绝不入库
+behavior.local.json
+# 群昵称手动覆盖（含群成员 wxid 与昵称），不入库
+nicks.local.json
+# 运行日志
+*.log
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/

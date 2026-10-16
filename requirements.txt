@@ -1,0 +1,5 @@
+# wxautochat 运行时依赖（只用命令行跑，装这三行就够）
+#   python -m pip install -r requirements.txt
+pycryptodome>=3.19
+zstandard>=0.22
+openai>=1.30

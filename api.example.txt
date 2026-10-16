@@ -1,0 +1,17 @@
+# DeepSeek API 配置 —— P2（风格画像）与 P3（自动回复）共用这一个文件。
+#
+# 用法：把下面 api_key 换成一行的真实密钥即可，其余可不动。
+#       只粘贴一串密钥也行（本文件容错：裸密钥行会当作 api_key）。
+#
+# 注意：本文件已被 .gitignore 排除，不会被提交。
+
+api_key=
+model=deepseek-flash
+base_url=https://api.deepseek.com
+
+# 可选说明（改动前先确认官方定价页）：
+#   model=deepseek-flash    便宜档，DeepSeek-V4.1-Flash，1M 上下文，并发 2500
+#   model=deepseek-v4-pro   贵档，输入未命中 ¥4.5/百万、输出 ¥13.5/百万
+#
+# 缓存命中与未命中差 50 倍（¥0.02 vs ¥1），故代码刻意把固定提示词放在最前。
+# 高峰时段 = 北京时间周一至周五 9:00-12:00、14:00-18:00，其余时段半价。

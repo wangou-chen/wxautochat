@@ -1,0 +1,22 @@
+{
+  "chat": "会话显示名（必填；也可写备注名/wxid，用 aliases 补充）",
+  "aliases": ["wxid_xxxxxxxxxxxxxxxx", "联系人备注名"],
+  "card": "该会话_self",
+  "live": true,
+  "verify": "send",
+  "interval": 2.0,
+  "quiet_window": 8.0,
+  "max_wait": 60.0,
+  "context": 24,
+  "history": 80,
+  "fewshot": 4,
+  "no_repeat": 12,
+  "max_burst": 3,
+  "send_gap": [3.0, 8.0],
+  "temperature": 0.9,
+  "think": false,
+  "max_tokens": 512,
+  "discard_pending_on": ["文本"],
+  "notes": ["该会话专用的『用户给定事实』：关系背景、对方雷区、你在意的事。会作为权威输入注入每次回复的 SYSTEM，可重复。"],
+  "comment": "优先级：命令行显式参数 > 本文件 > 内置默认。用 `python -m wxautochat convo --chat \"会话名\"` 查看当前生效值。"
+}

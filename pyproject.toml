@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wxautochat"
+version = "1.0.0"
+description = "微信 4.x 拟人自动回复：内存取密钥解密 → 大模型风格画像 → UI 自动化发送 → 数据库回读校验"
+readme = "README.md"
+requires-python = ">=3.10"
+keywords = ["wechat", "sqlcipher", "automation", "llm", "deepseek"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: Microsoft :: Windows",
+]
+dependencies = [
+    "pycryptodome>=3.19",   # SQLCipher 4 页解密（AES-256-CBC + HMAC-SHA512）
+    "zstandard>=0.22",      # 消息正文为 zstd 压缩（WCDB_CT_* = 4）
+    "openai>=1.30",         # OpenAI 兼容客户端，指向 DeepSeek
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+wxautochat = "wxautochat.cli:main"
+
+[tool.setuptools]
+packages = ["wxautochat"]
+
+[tool.setuptools.package-data]
+wxautochat = ["*.txt", "*.json", "*.md"]
