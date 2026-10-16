@@ -1,0 +1,22 @@
+{
+  "chat": "_default",
+  "aliases": [],
+  "card": "",
+  "live": true,
+  "verify": "send",
+  "interval": 2.0,
+  "quiet_window": 8.0,
+  "max_wait": 60.0,
+  "context": 24,
+  "history": 80,
+  "fewshot": 4,
+  "no_repeat": 12,
+  "max_burst": 3,
+  "send_gap": [3.0, 8.0],
+  "temperature": 0.9,
+  "think": false,
+  "max_tokens": 512,
+  "discard_pending_on": ["文本"],
+  "notes": [],
+  "comment": "默认会话配置：任何没有专属 conversations/<会话>.json 的会话都走这一份。优先级 命令行显式参数 > 会话专属配置 > 本文件。live=true 表示开箱即可发送；只想出草稿请加 --no-live。要针对某个会话微调，用 `python -m wxautochat convo --chat \"会话名\" --write` 从本文件派生一份。"
+}

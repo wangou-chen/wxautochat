@@ -151,6 +151,14 @@ python -m wxautochat reply --chat "某个会话" --verbose        # 带 API 调�
 
 **运行期间微信必须停在目标会话**：发送前会 OCR 核验会话名，不符则只落草稿不发送。
 
+**对任何人开箱即用**：仓库自带 `defaults/`（默认人格卡 + 默认会话策略），
+所以任意会话都能直接启动，**不必先跑 P2 生成卡片**：
+
+```powershell
+python -m wxautochat reply --chat "任意联系人" --no-live --once   # 先看草稿再说
+python -m wxautochat reply --chat "任意联系人"                    # 直接跑（默认 live=true）
+```
+
 ### 3.5 在别人的环境里运行（可移植性）
 
 **目录约定**：数据根 = **仓库目录的父目录**（`config.ROOT = dirname(PKG_DIR)`）。所以标准用法是：
@@ -367,7 +375,32 @@ python -m wxautochat probe            # 首次会全量解密，约 4 秒 / 592 
 自检 18/18 通过，其中一条专门断言**全局的软化要求已从提示词里消失**、
 而**输出形式与正确性两段一条不少**。
 
-### 5.3 三层配置示例
+### 5.4 默认配置与默认人格（开箱即用）
+
+仓库自带三份默认文件，**任何会话都能直接启动**：
+
+| 文件 | 作用 |
+|---|---|
+| `defaults/_default.json` | 默认会话策略：`live=true`、静默 8 秒、最长等 60 秒、连发上限 3、间隔随机 3~8 秒、`discard_pending_on ["文本"]` |
+| `defaults/_default_self.json` | 私聊默认人格卡（人工编写，数值来自本机已生成卡片的汇总统计） |
+| `defaults/_default_group_self.json` | 群聊默认人格卡（群里更短更碎，且要按群昵称 @ 人） |
+
+**查找顺序**（前两级是"你的"，第三级是"出厂的"）：
+
+```
+卡片： profiles/<会话>_self.json  →  profiles/_default_self.json  →  <包>/defaults/_default_self.json
+配置： conversations/<会话>.json  →  conversations/_default.json   →  <包>/defaults/_default.json
+```
+
+- 私聊/群聊各有一份默认卡片：两者语域差别是实测出来的，用一张卡必然有一边不像。
+- 想覆盖默认：在 `<数据根>\profiles\_default_self.json` 或 `<数据根>\conversations\_default.json`
+  写一份同名文件即可（项目根优先于包内）。
+- 想只改一个会话：`convo --chat "会话名" --write` **从默认派生**一份，只改要改的几项。
+- 想让某会话**不被发送**（只出草稿）：加 `--no-live`，它会压过默认配置里的 `live=true`。
+- `pick_card` 有一层兜底：连默认卡都没有时才会借用别的会话的卡片，**并打警告**
+  —— 早期版本把兜底当常规路径，会静默借用语气完全不符的卡片。
+
+### 5.5 三层配置示例
 
 ```powershell
 python -m wxautochat convo --list                    # 列出全部会话配置
@@ -432,6 +465,7 @@ python -m wxautochat reply --chat "某个会话" --verify full   # 最严校验�
 | `--config` | 显式指定会话配置（默认按会话名自动找） |
 | `--card` | 显式指定人格卡片（跨会话借用时用） |
 | `--live` | 真发送；不加则只出草稿 |
+| `--no-live` | 只出草稿，**用来压过会话配置里的 `live=true`** |
 | `--interval` / `--quiet-window` / `--max-wait` | 节奏（见 §5.1） |
 | `--max-burst` / `--send-gap` | 连发条数与间隔；`--send-gap 3,8` 表示每条随机 |
 | `--verify` | `full` / `send`（默认）/ `none` |
@@ -509,6 +543,10 @@ wxautochat/
 ├── lock.py          单实例锁（心跳，防并发写游标）
 ├── analyze.py       记录导出 + 零 token 统计报告
 ├── grouproster.py   群昵称 protobuf 解析 + @ 合法性校验
+├── defaults/        **随仓库分发的出厂默认**（开箱即用的关键）
+│   ├── _default.json               默认会话策略
+│   ├── _default_self.json          私聊默认人格卡
+│   └── _default_group_self.json    群聊默认人格卡
 ├── PROBE.md         可行性探测结论（为什么不能用 UIA 等）
 ├── api.example.txt  API 配置模板（保持为空）
 ├── config.local.example.json

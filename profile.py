@@ -437,7 +437,7 @@ def run(snaps: dict, query: str, md5map: dict, contacts: dict,
 # ---------------------------------------------------------------- 落盘
 
 def _safe(name: str) -> str:
-    return re.sub(r'[\\/:*?"<>|\s]+', "_", str(name))[:60] or "profile"
+    return config.safe_name(name)
 
 
 def save(card: dict, out_dir: str = None) -> dict:

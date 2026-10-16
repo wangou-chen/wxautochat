@@ -80,27 +80,77 @@ def load_card(name: str) -> dict:
     return {}
 
 
-def pick_card(display: str = "", want_group: bool = None) -> tuple:
-    """挑一张本人风格卡片。
+def card_dirs() -> list:
+    """卡片查找目录，按优先级：项目根的 profiles/ → 包内 defaults/。"""
+    return [os.path.join(config.ROOT, "profiles"),
+            os.path.join(config.PKG_DIR, "defaults")]
 
-    优先：`<会话>_self.json`；否则取同为群聊/私聊的卡片；再否则任意 `_self`。
-    返回 (card, path)。都没有则返回 ({}, "")。
+
+def default_card_names(want_group: bool = None) -> list:
+    """默认卡片文件名，按优先级。
+
+    为什么要分私聊/群聊两份默认：两者的语域差别是实测出来的 ——
+    私聊里是短句、软、连发 2~3 条；群里更短更冲、还要带 @ 与群昵称。
+    用一张卡同时覆盖两边，必然有一边不像。
+    """
+    if want_group is True:
+        return ["_default_group_self.json", "_default_self.json"]
+    return ["_default_self.json", "_default_group_self.json"]
+
+
+def pick_card(display: str = "", want_group: bool = None,
+              verbose: bool = False) -> tuple:
+    """挑一张本人风格卡片。返回 (card, path)，都没有则 ({}, "")。
+
+    查找顺序（**前三级不依赖任何会话专属配置**，所以对任何人开箱即用）：
+
+      1. `profiles/<会话>_self.json`            该会话的专属卡片（P2 生成）
+      2. `profiles/_default_self.json`          你自己写的默认卡片
+      3. `<包目录>/defaults/_default_self.json`  随仓库分发的出厂默认
+      4. 兜底：同类型的任意 `*_self.json`
+
+    **第 4 级只是兜底，会打警告**：早期版本把它当正常路径，结果是"没配置就静默
+    借用别的会话的卡片"，语气与关系完全不符（实测会借到 `翔铭_self`）。
+    有默认卡片之后不该再走到第 4 级。
     """
     import glob
-    d = os.path.join(config.ROOT, "profiles")
-    exact = os.path.join(d, "%s_self.json" % display)
-    if display and os.path.exists(exact):
-        return load_card(exact), exact
+    dirs = card_dirs()
+    if display:
+        # 卡片文件名与显示名**不一定逐字相同**：落盘时会把空格等字符换成下划线
+        # （`小狗媳妇 ᝰꫛꫀꪝ` -> `小狗媳妇_ᝰꫛꫀꪝ_self.json`）。只按原始名找会静默
+        # 命不中，然后悄悄退回默认卡 —— 实测踩过，所以两种写法都试。
+        names = ["%s_self.json" % display,
+                 "%s_self.json" % config.safe_name(display)]
+        for name in names:
+            for d in dirs:
+                p = os.path.join(d, name)
+                if os.path.exists(p):
+                    return load_card(p), p
+    for name in default_card_names(want_group):
+        for d in dirs:
+            p = os.path.join(d, name)
+            if os.path.exists(p):
+                c = load_card(p)
+                if c.get("llm_profile"):
+                    return c, p
     best, bestp = {}, ""
-    for p in sorted(glob.glob(os.path.join(d, "*_self.json"))):
-        c = load_card(p)
-        if not c.get("llm_profile"):
-            continue
-        is_group = bool((c.get("session") or {}).get("is_group"))
-        if want_group is not None and is_group == want_group:
-            return c, p
-        if not best:
-            best, bestp = c, p
+    for d in dirs:
+        for p in sorted(glob.glob(os.path.join(d, "*_self.json"))):
+            c = load_card(p)
+            if not c.get("llm_profile"):
+                continue
+            is_group = bool((c.get("session") or {}).get("is_group"))
+            if want_group is not None and is_group == want_group:
+                best, bestp = c, p
+                break
+            if not best:
+                best, bestp = c, p
+        if best:
+            break
+    if bestp and verbose:
+        print("[警告] 没有默认卡片，临时借用 %s —— 语气可能与该会话不符，"
+              "建议写一份 defaults/_default_self.json 或跑一次 P2"
+              % os.path.basename(bestp))
     return best, bestp
 
 

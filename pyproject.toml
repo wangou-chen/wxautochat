@@ -29,4 +29,4 @@ wxautochat = "wxautochat.cli:main"
 packages = ["wxautochat"]
 
 [tool.setuptools.package-data]
-wxautochat = ["*.txt", "*.json", "*.md"]
+wxautochat = ["*.txt", "*.json", "*.md", "defaults/*.json"]

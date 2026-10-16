@@ -34,6 +34,18 @@ DEFAULT_DECRYPTED = os.path.join(ROOT, "decrypted")
 DEFAULT_WORK = os.path.join(ROOT, "work")
 
 
+def safe_name(s, maxlen: int = 60) -> str:
+    """把显示名转成可用作文件名的形式。
+
+    **必须只有这一处实现**：卡片落盘（profile）、会话配置（convo）与卡片查找
+    （reply.pick_card）如果各写各的规则，就会出现"文件写成了 `A_B_self.json`，
+    查找却拿原始名 `A B` 去找"这种静默失效 —— 实测 `小狗媳妇 ᝰꫛꫀꪝ`
+    （名字里有空格）的专属卡片因此从未被命中，一直悄悄退回默认卡。
+    """
+    import re
+    return re.sub(r'[\\/:*?"<>|\s]+', "_", str(s or ""))[:maxlen] or "unnamed"
+
+
 def load_local() -> dict:
     """读本地配置（gitignore）。不存在则返回空 dict。"""
     if not os.path.exists(LOCAL_CONFIG):

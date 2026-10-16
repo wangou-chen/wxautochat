@@ -60,6 +60,7 @@ VALUE_FLAGS = {
 BOOL_FLAGS = {
     "live": "--live", "dry_send": "--dry-send", "no_click": "--no-click",
     "fast": "--fast", "think": "--think", "once": "--once",
+    "no_live": "--no-live",
 }
 KNOWN = set(VALUE_FLAGS) | set(BOOL_FLAGS) | {
     "chat", "aliases", "discard_pending_on", "notes", "comment", "behavior",
@@ -86,9 +87,21 @@ def files():
     return sorted(glob.glob(os.path.join(DIR, "*.json")))
 
 
+DEFAULT_NAME = "_default.json"
+
+
+def default_files() -> list:
+    """默认会话配置的候选路径，按优先级：项目根 → 包内（随仓库分发）。"""
+    return [os.path.join(DIR, DEFAULT_NAME),
+            os.path.join(config.PKG_DIR, "defaults", DEFAULT_NAME)]
+
+
+def is_default(path: str = "") -> bool:
+    return bool(path) and os.path.basename(path) == DEFAULT_NAME
+
+
 def path_for(name: str) -> str:
-    safe = re.sub(r'[\\/:*?"<>|\s]+', "_", str(name or "example"))[:60]
-    return os.path.join(DIR, "%s.json" % (safe or "example"))
+    return os.path.join(DIR, "%s.json" % config.safe_name(name))
 
 
 def dump(cfg: dict, name: str = None, path: str = None) -> str:
@@ -112,17 +125,34 @@ DEFAULTS = {
 
 
 def write_template(chat: str, force: bool = False) -> str:
-    """给某会话生成配置模板；已存在时默认不覆盖，只补齐缺的键。"""
+    """给某会话生成配置模板。
+
+    骨架优先取自**生效的默认配置**（`_default.json`：项目根优先，其次包内），
+    这样"从默认派生一份专属配置、只改要改的几项"是自然操作；
+    没有默认文件时退回内置 DEFAULTS。
+    已存在时默认不覆盖，只补齐缺的键。
+    """
+    seed = load_default() or dict(DEFAULTS)
+    seed.pop("chat", None)
     p = path_for(chat)
     cfg = load_file(p) if os.path.exists(p) else {}
     if cfg and not force:
-        for k, v in DEFAULTS.items():
+        for k, v in seed.items():
             cfg.setdefault(k, v)
     else:
-        cfg = dict(DEFAULTS)
-        cfg["chat"] = chat
+        cfg = dict(seed)
     cfg["chat"] = cfg.get("chat") or chat
     return dump(cfg, path=p)
+
+
+def load_default() -> dict:
+    """读生效的默认会话配置（项目根 → 包内 defaults/）。都没有返回 {}。"""
+    for p in default_files():
+        if os.path.exists(p):
+            cfg = load_file(p)
+            if cfg:
+                return cfg
+    return {}
 
 
 def load_file(path: str) -> dict:
@@ -134,8 +164,17 @@ def load_file(path: str) -> dict:
         return {}
 
 
-def find(display: str = "", username: str = "", name: str = None) -> tuple:
-    """定位该会话的配置文件。name 给出时按文件名/路径直接取。"""
+def find(display: str = "", username: str = "", name: str = None,
+         allow_default: bool = True) -> tuple:
+    """定位该会话的配置文件。
+
+    顺序：专属配置 → **默认配置**（`_default.json`：项目根优先，其次包内 defaults/）。
+    有了默认配置，"对任何人启动对话"才成立 —— 否则未配置的会话会退回 argparse
+    的内置默认值，其中 `live=False` 会导致**根本不发送**。
+
+    name 给出时按文件名/路径直接取，不再走默认兜底。
+    `_default.json` 自身不会被当成某个会话的专属配置（按 chat 匹配时跳过它）。
+    """
     if name:
         cands = [name] if os.path.isabs(name) or os.sep in name else [
             os.path.join(DIR, name if name.endswith(".json") else name + ".json"),
@@ -145,6 +184,8 @@ def find(display: str = "", username: str = "", name: str = None) -> tuple:
                 return c, load_file(c)
         return None, {}
     for p in files():
+        if is_default(p):
+            continue
         cfg = load_file(p)
         who = [str(cfg.get("chat") or "")] + [str(a) for a in
                                               (cfg.get("aliases") or [])]
@@ -152,6 +193,12 @@ def find(display: str = "", username: str = "", name: str = None) -> tuple:
         if (display and display in who) or (username and username in who) \
                 or (display and display == base):
             return p, cfg
+    if allow_default:
+        for p in default_files():
+            if os.path.exists(p):
+                cfg = load_file(p)
+                if cfg:
+                    return p, cfg
     return None, {}
 
 
@@ -164,7 +211,8 @@ def apply(args, target: dict) -> dict:
     path, cfg = find(disp, (target or {}).get("username", ""), name)
     if not cfg:
         if name:
-            print("[警告] 未找到会话配置 %r，按命令行/默认参数运行" % name)
+            print("[警告] 未找到会话配置 %r，按命令行/内置默认运行（不会自动发送）"
+                  % name)
         return {}
     given = getattr(args, "_given", set())
     for k, flag in VALUE_FLAGS.items():
@@ -173,8 +221,14 @@ def apply(args, target: dict) -> dict:
     for k, flag in BOOL_FLAGS.items():
         if k in cfg and flag not in given:
             setattr(args, k, bool(cfg[k]))
+    if getattr(args, "no_live", False):
+        # --no-live 是"只出草稿"的显式出口：默认配置里 live=true 时用它压回去
+        args.live = False
     args.send_gap = parse_gap(args.send_gap)
-    print("会话配置: %s" % path)
+    if is_default(path):
+        print("会话配置: %s（**默认**，该会话没有专属配置）" % path)
+    else:
+        print("会话配置: %s" % path)
     return cfg
 
 

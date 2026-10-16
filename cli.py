@@ -9,6 +9,7 @@
     python -m wxautochat reply --chat X       生成回复草稿，不发送（P3「拟」）
 """
 import argparse
+import atexit
 import datetime
 import json
 import os
@@ -131,6 +132,9 @@ def cmd_watch(args):
     if not lock.acquire(info["work"], note="watch %s" % (args.chat or "全部"),
                         verbose=True):
         return 2
+    # 兜底释放：`--once` 等提前 return 的路径不会走到显式 release，
+    # 残留的锁会让 60 秒内的下一次启动被"已有实例在运行"挡住（实测踩过）。
+    atexit.register(lock.release, info["work"])
     if args.rebuild:
         for snap in info["snaps"].values():
             snap.invalidate()
@@ -305,7 +309,8 @@ def cmd_reply(args):
             return 2
     else:
         card, card_path = rep.pick_card(target["display"],
-                                        want_group=target["is_group"])
+                                        want_group=target["is_group"],
+                                        verbose=not args.quiet)
         if not card or not card.get("llm_profile"):
             print("[错误] 没有可用的本人风格卡片。先运行：\n"
                   "  python -m wxautochat profile --chat \"%s\" --who self"
@@ -342,6 +347,10 @@ def cmd_reply(args):
     if not lock.acquire(info["work"], note="reply %s" % target["display"],
                         verbose=True):
         return 2
+    # 兜底释放：`--once` / 单轮异常等提前 return 的路径不会走到显式 release，
+    # 残留锁会让 60 秒内的下一次启动被"已有实例在运行"挡住（实测：连续两次
+    # `reply --once` 第二次必被拒，而 --once 正是推荐的试语气方式）。
+    atexit.register(lock.release, info["work"])
 
     # 首轮 poll 只建立游标基线，不产出历史消息
     w.poll()
@@ -642,6 +651,14 @@ def cmd_convo(args):
             print("  %s" % p)
         if not fs:
             print("  （无）用 `python -m wxautochat convo --chat \"会话名\" --write` 生成")
+        print("默认配置（未配置的会话走这里）:")
+        found = False
+        for p in convo.default_files():
+            if os.path.exists(p):
+                print("  %s" % p)
+                found = True
+        if not found:
+            print("  （无默认配置 —— 未配置的会话将不发送）")
         return 0
     if not args.chat:
         print("[错误] 需要 --chat（或用 --list 列出全部）", file=sys.stderr)
@@ -654,9 +671,12 @@ def cmd_convo(args):
         return 0
     path, cfg = convo.find(display=args.chat)
     if not cfg:
-        print("未找到 %r 的配置。生成模板：" % args.chat)
+        print("未找到 %r 的配置，也没有默认配置。生成模板：" % args.chat)
         print("  python -m wxautochat convo --chat \"%s\" --write" % args.chat)
         return 1
+    if convo.is_default(path):
+        print("该会话**没有专属配置**，当前生效的是默认配置。"
+              "（改它会同时影响所有未配置的会话；只想改这个会话就先 --write 派生一份）")
     print("文件: %s" % path)
     print(json.dumps(cfg, ensure_ascii=False, indent=1))
     return 0
@@ -866,6 +886,8 @@ def build_parser():
     sp.add_argument("--show-raw", action="store_true", help="也打印模型原始返回")
     sp.add_argument("--live", action="store_true",
                     help="真的发送（默认只生成草稿，不发送）")
+    sp.add_argument("--no-live", dest="no_live", action="store_true",
+                    help="只生成草稿、不发送；用来覆盖会话配置里的 live=true")
     sp.add_argument("--dry-send", action="store_true",
                     help="配合 --live：走完发送流程但最后不按键，验证锚点与校验")
     sp.add_argument("--send-gap", type=convo.parse_gap, default=0.8,
